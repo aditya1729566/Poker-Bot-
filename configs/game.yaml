@@ -1,0 +1,9 @@
+schema_version: 1
+id: hunl_100bb_v1
+players: 2
+deck_cards: 52
+initial_stack_chips: 10000
+small_blind_chips: 50
+big_blind_chips: 100
+ante_chips: 0
+rake_chips: 0
