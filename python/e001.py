@@ -192,13 +192,13 @@ def update_context(context: dict, action: dict) -> None:
         context["table_visits_at_least_10"] += 1
 
 
-def analyze_match(seed: int, opponent: str, arm: str, data: dict) -> tuple[list[int], dict, list[float]]:
+def analyze_match(seed: int, opponent: str, arm: str, data: dict,
+                  run_commit: str) -> tuple[list[int], dict, list[float]]:
     report_path, prefix = run_paths(seed, opponent, arm)
     blocks_path = Path(str(prefix) + ".blocks.jsonl")
     actions_path = Path(str(prefix) + ".actions.jsonl")
     report = json.loads(report_path.read_text())
-    commit, dirty = git_state()
-    if dirty or report["git_commit"] != commit or report["dirty_tree"] or report["build_type"] != "Release":
+    if report["git_commit"] != run_commit or report["dirty_tree"] or report["build_type"] != "Release":
         raise RuntimeError(f"match was not built from the clean release source: {prefix}")
     if report["schema_version"] != 1 or report["diagnostics_schema"] != data["diagnostics_schema"]:
         raise RuntimeError(f"diagnostic schema mismatch: {prefix}")
@@ -236,7 +236,12 @@ def analyze_match(seed: int, opponent: str, arm: str, data: dict) -> tuple[list[
         raise RuntimeError(f"missing blocks: {prefix}")
     if seat_net != report["agent1_by_button_net_chips"] or sum(seat_net) != report["net_chips"][0]:
         raise RuntimeError(f"block totals do not reconcile: {prefix}")
-    if abs(sum(block_returns) / 5000 - report["mbb_per_hand"]) > 0.02:
+    exact_mbb = sum(block_returns) / 5000
+    # The C++ JSON stream uses its default six significant digits; verify the
+    # displayed value within half a unit of its last printed decimal place.
+    display_tolerance = (0.5 * 10 ** (math.floor(math.log10(abs(exact_mbb))) - 5)
+                         if exact_mbb else 0.000005) + 1e-7
+    if abs(exact_mbb - report["mbb_per_hand"]) > display_tolerance:
         raise RuntimeError(f"reported mbb rate does not reconcile: {prefix}")
 
     action_rows = 0
@@ -311,10 +316,18 @@ def analyze_match(seed: int, opponent: str, arm: str, data: dict) -> tuple[list[
 
 def analyze_all() -> dict:
     data = manifest()
-    provenance = verify_inputs(data)
+    analysis_provenance = verify_inputs(data)
     progress = json.loads((OUTPUT / "progress.json").read_text())
-    if progress["provenance"] != provenance:
-        raise RuntimeError("E-001 provenance changed after runs")
+    run_provenance = progress["provenance"]
+    for key in ("artifact_sha256", "manifest_sha256", "benchmark_manifest_sha256",
+                "game_config_sha256", "action_config_sha256"):
+        if run_provenance[key] != analysis_provenance[key]:
+            raise RuntimeError(f"E-001 artifact or predeclared input changed after runs: {key}")
+    changed = subprocess.check_output(
+        ["git", "diff", "--name-only", run_provenance["source_commit"], "HEAD"],
+        cwd=ROOT, text=True).splitlines()
+    if any(path not in {"python/e001.py", "docs/decisions.md"} for path in changed):
+        raise RuntimeError(f"post-run source changed outside analysis code/documentation: {changed}")
     expected_names = {f"seed{seed}_{opponent}_{arm}" for seed in data["root_seeds"]
                       for opponent in data["opponents"] for arm in ("control", "treatment")}
     if set(progress["runs"]) != expected_names or any(run["status"] != "completed" for run in progress["runs"].values()):
@@ -326,7 +339,8 @@ def analyze_all() -> dict:
         for opponent in data["opponents"]:
             for arm in ("control", "treatment"):
                 name = f"seed{seed}_{opponent}_{arm}"
-                blocks[(seed, opponent, arm)], details[name], latencies[name] = analyze_match(seed, opponent, arm, data)
+                blocks[(seed, opponent, arm)], details[name], latencies[name] = analyze_match(
+                    seed, opponent, arm, data, run_provenance["source_commit"])
                 if details[name]["report_sha256"] != progress["runs"][name]["report_sha256"] or \
                    details[name]["blocks_sha256"] != progress["runs"][name]["blocks_sha256"] or \
                    details[name]["actions_sha256"] != progress["runs"][name]["actions_sha256"]:
@@ -362,7 +376,8 @@ def analyze_all() -> dict:
     primary = interval(primary_clusters)
     primary["supports_equity_only_outperformance"] = primary["ci95_mbb_per_hand"][0] > 0
     result = {"schema_version": 1, "experiment": data["id"], "cohort": "development",
-              "valid": True, "provenance": provenance, "manifest": data,
+              "valid": True, "run_provenance": run_provenance,
+              "analysis_provenance": analysis_provenance, "manifest": data,
               "primary": primary, "opponents": comparisons, "runs": details,
               "total_hands": sum(item["hands"] for item in details.values()),
               "total_actions": sum(item["actions"] for item in details.values()),
@@ -380,11 +395,13 @@ def render_report(result: dict) -> str:
     p_low, p_high = primary["ci95_mbb_per_hand"]
     lines = ["# PokerZero E-001: equity-only ablation", "",
              "Development cohort only. The frozen restricted policy is the control; the existing equity agent is the treatment.",
-             "", f"Source commit: `{result['provenance']['source_commit']}`  ",
-             f"Source tree SHA-256: `{result['provenance']['source_tree_sha256']}`  ",
-             f"Frozen artifact SHA-256: `{result['provenance']['artifact_sha256']}`  ",
-             f"Experiment manifest SHA-256: `{result['provenance']['manifest_sha256']}`  ",
-             f"Benchmark manifest SHA-256: `{result['provenance']['benchmark_manifest_sha256']}`", "",
+             "", f"Match source commit: `{result['run_provenance']['source_commit']}`  ",
+             f"Match source tree SHA-256: `{result['run_provenance']['source_tree_sha256']}`  ",
+             f"Analysis source commit: `{result['analysis_provenance']['source_commit']}`  ",
+             f"Analysis source tree SHA-256: `{result['analysis_provenance']['source_tree_sha256']}`  ",
+             f"Frozen artifact SHA-256: `{result['run_provenance']['artifact_sha256']}`  ",
+             f"Experiment manifest SHA-256: `{result['run_provenance']['manifest_sha256']}`  ",
+             f"Benchmark manifest SHA-256: `{result['run_provenance']['benchmark_manifest_sha256']}`", "",
              "## Primary result", "",
              f"Equal-weight treatment-minus-control over tight-aggressive, loose-aggressive, and equity: "
              f"**{primary['mean_mbb_per_hand']:+.2f} mbb/hand**, 95% interval "
@@ -465,7 +482,12 @@ def render_report(result: dict) -> str:
               "`analysis.json` includes per-run seat nets, fallback counts, latency percentiles, context tables, "
               "pot bands, file hashes, and all 30 match identities. The block files preserve the two candidate "
               "returns separately for each duplicate pair. Opponent instances were created in separate "
-              "processes for every arm. No final or validation seed was used.", ""]
+              "processes for every arm. No final or validation seed was used.", "",
+              "## Analysis correction", "",
+              "After all match files were frozen, the initial analyzer rejected a valid six-significant-digit "
+              "summary rounding difference. Only the display-precision reconciliation and analysis provenance "
+              "handling were corrected. Match source, policy, opponents, diagnostic files, manifest, and seeds "
+              "were not changed or rerun.", ""]
     return "\n".join(lines)
 
 
