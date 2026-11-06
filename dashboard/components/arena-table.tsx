@@ -34,7 +34,7 @@ export function ArenaTable() {
 
   useEffect(() => {
     if (state?.legal?.minRaiseTo !== null && state?.legal?.minRaiseTo !== undefined) setRaiseTo(state.legal.minRaiseTo);
-    if (state?.terminal && sessionId) arena.completed(sessionId, state.handId).then(hand => { setCompleted(hand); try { sessionStorage.setItem("pokerzero.lastCompletedHand.v1", JSON.stringify(hand)); } catch {} }).catch(() => setCompleted(null));
+    if (state?.terminal && sessionId) arena.completed(sessionId, state.handId).then(hand => { setCompleted(hand); try { sessionStorage.setItem("pokerzero.lastReplayId.v1", hand.replayId); } catch {} }).catch(() => setCompleted(null));
   }, [state, sessionId]);
 
   async function start() {
