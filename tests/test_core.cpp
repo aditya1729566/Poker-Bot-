@@ -64,7 +64,8 @@ void test_cards_and_rng() {
   // A deliberately loose deterministic smoke check; uniformity follows from rejection sampling.
   for (const int count : first_card_counts) require(count > 1500 && count < 2350, "shuffle first-card frequency");
   std::unordered_set<std::uint64_t> allocated_seeds;
-  for (const std::uint64_t root : {42ULL, 43ULL, 44ULL, 51ULL, 52ULL, 53ULL})
+  for (const std::uint64_t root : {42ULL, 43ULL, 44ULL, 51ULL, 52ULL, 53ULL,
+                                   54ULL, 55ULL, 56ULL, 57ULL, 58ULL, 59ULL})
     for (std::uint64_t block = 0; block < 100000; ++block)
       require(allocated_seeds.insert(derive_stream_seed(root, kMatchDealDomain, block)).second,
               "declared match cohorts have disjoint deal seeds");
@@ -260,6 +261,57 @@ void test_pairing() {
           "paired match accounting");
   require(report.timeouts == 0 && report.illegal_actions == 0, "paired match action validity");
 }
+void test_player_label_swap() {
+  // A pure relabel keeps the physical deck fixed. Reversing the button then
+  // reassigns each private packet, blind, and policy stream to the new label.
+  for (std::uint64_t seed = 0; seed < 16; ++seed) {
+    const auto deck = shuffled_deck(derive_stream_seed(54, kMatchDealDomain, seed));
+    Game original = Game::reset_with_deck(deck, {}, 0);
+    Game relabeled = Game::reset_with_deck(deck, {}, 1);
+    BaselineAgent a0(BaselineStyle::Equity), a1(BaselineStyle::Equity);
+    BaselineAgent b0(BaselineStyle::Equity), b1(BaselineStyle::Equity);
+    const auto s0 = derive_stream_seed(54, kMatchPolicyDomain, seed);
+    const auto s1 = derive_stream_seed(54, kMatchPolicyDomain + 1, seed);
+    Pcg32 original_rng0(s0), original_rng1(s1);
+    Pcg32 relabeled_rng0(s1), relabeled_rng1(s0);
+    int actions = 0;
+    while (!original.terminal()) {
+      require(!relabeled.terminal() && relabeled.actor() == 1 - original.actor(),
+              "relabel actor and termination");
+      const auto o = original.observe(original.actor());
+      const auto r = relabeled.observe(relabeled.actor());
+      require(o.player == 1 - r.player && o.button == 1 - r.button &&
+              o.hole == r.hole && o.board == r.board && o.street == r.street &&
+              o.pot == r.pot && o.to_call == r.to_call &&
+              o.stacks[0] == r.stacks[1] && o.stacks[1] == r.stacks[0] &&
+              o.street_contributions[0] == r.street_contributions[1] &&
+              o.street_contributions[1] == r.street_contributions[0],
+              "relabel observation values");
+      require(o.legal.fold == r.legal.fold && o.legal.check == r.legal.check &&
+              o.legal.call == r.legal.call && o.legal.min_raise_to == r.legal.min_raise_to &&
+              o.legal.max_raise_to == r.legal.max_raise_to && o.history.size() == r.history.size(),
+              "relabel legal actions and history length");
+      for (std::size_t i = 0; i < o.history.size(); ++i) {
+        const auto& x = o.history[i];
+        const auto& y = r.history[i];
+        require(x.player == 1 - y.player && x.street == y.street && x.action == y.action &&
+                x.committed == y.committed && x.pot_after == y.pot_after,
+                "relabel public transcript");
+      }
+      const auto action = o.player == 0 ? a0.act(o, original_rng0) : a1.act(o, original_rng1);
+      const auto transformed = r.player == 0 ? b0.act(r, relabeled_rng0) : b1.act(r, relabeled_rng1);
+      require(action == transformed && o.legal.contains(action) && r.legal.contains(transformed),
+              "relabel policy action with role stream");
+      original.step(action);
+      relabeled.step(transformed);
+      require(++actions < 100, "relabel hand terminates");
+    }
+    const auto a = original.terminal_payoffs();
+    const auto b = relabeled.terminal_payoffs();
+    require(relabeled.terminal() && a[0] == b[1] && a[1] == b[0] && a[0] == -b[0],
+            "relabel payoff negates for player zero");
+  }
+}
 struct CollectedDiagnostics final : MatchDiagnosticObserver {
   std::vector<ActionDiagnostic> actions;
   std::vector<BlockDiagnostic> blocks;
@@ -429,6 +481,7 @@ int main() {
     test_random_hands();
     test_equity_and_baselines();
     test_pairing();
+    test_player_label_swap();
     test_match_diagnostics();
     test_small_solver();
     test_restricted_abstraction();

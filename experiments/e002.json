@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "id": "E-002-equity-mirror-calibration",
+  "cohort": "development",
+  "purpose": "Audit the E-001 identical-equity mirror offset; no candidate selection",
+  "agent1": "equity",
+  "agent2": "equity",
+  "root_seeds": [54, 55, 56, 57, 58, 59],
+  "hands_per_seed": 10000,
+  "paired_blocks_per_seed": 5000,
+  "action_budget_ms": 25,
+  "rules_version": "hunl_100bb_v1",
+  "confidence_method": "normal_standard_error_over_duplicate_deal_blocks",
+  "sample_unit": "root_seed_and_duplicate_deal_block",
+  "precision_target_halfwidth_mbb_per_hand": 500,
+  "diagnostics_schema": "e001_match_diagnostics_v1",
+  "required_checks": ["all_six_seeds", "exact_block_seat_net_reconciliation", "actor_failures_reconcile", "zero_sum", "metamorphic_label_swap"],
+  "stop_rule": "If a rules, RNG, or logging defect is found, stop before fresh benchmarking and report evidence."
+}
