@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AlertCircle, RotateCcw } from "lucide-react";
+import Link from "next/link";
 import { arena, ArenaError, type Action, type ArenaState, type Checkpoint, type CompletedHand } from "@/lib/arena";
 import { Button } from "@/components/ui/button";
 
@@ -9,7 +10,11 @@ function CardFace({ card, hidden = false }: { card?: string; hidden?: boolean })
   const suit = card?.slice(-1).toLowerCase();
   const red = suit === "h" || suit === "d";
   const symbols: Record<string, string> = { h: "♥", d: "♦", c: "♣", s: "♠" };
-  return <span className={`card ${hidden ? "card-back" : red ? "card-red" : "card-black"}`} aria-label={hidden ? "Hidden card" : card || "Empty card slot"}>{hidden ? <span className="card-back-mark">P0</span> : card ? <><b>{card.slice(0,-1).toUpperCase()}</b><span>{symbols[suit || ""]}</span></> : ""}</span>;
+  const suits: Record<string, string> = { h: "hearts", d: "diamonds", c: "clubs", s: "spades" };
+  const ranks: Record<string, string> = { A: "ace", K: "king", Q: "queen", J: "jack", T: "ten" };
+  const rank = card?.slice(0,-1).toUpperCase() || "";
+  const label = hidden ? "Hidden card" : card ? `${ranks[rank] || rank} of ${suits[suit || ""] || "unknown suit"}` : "Empty card slot";
+  return <span className={`card ${hidden ? "card-back" : red ? "card-red" : "card-black"}`} role="img" aria-label={label}>{hidden ? <span className="card-back-mark" aria-hidden="true">P0</span> : card ? <><b aria-hidden="true">{rank}</b><span aria-hidden="true">{symbols[suit || ""]}</span></> : ""}</span>;
 }
 
 const chips = (amount: number | undefined, bigBlind: number) => amount === undefined ? "—" : `${(amount / bigBlind).toFixed(amount % bigBlind ? 1 : 0)} BB`;
@@ -75,7 +80,7 @@ export function ArenaTable() {
     <aside className="control-panel"><div className="panel-heading"><span className="eyebrow">LOCAL SESSION</span><h2>Action desk</h2></div>
       {!state && <div className="setup"><label htmlFor="checkpoint">Bot policy</label><select id="checkpoint" value={selected} onChange={e => setSelected(e.target.value)} disabled={!adapterAvailable || busy}><option value="">{adapterAvailable ? "No approved policies" : "Engine unavailable"}</option>{checkpoints.map(c => <option key={c.id} value={c.id} disabled={!c.available}>{c.label}{c.available ? "" : " · unavailable"}</option>)}</select><p>Policies are loaded from the adapter’s verified local allowlist.</p><Button onClick={start} disabled={!selected || busy}>{busy ? "Dealing…" : "Deal hand"}</Button></div>}
       {state && !state.terminal && <div className="actions"><div className="decision-data"><span>TO CALL <strong>{chips(legal?.toCall,bb)}</strong></span><span>STREET COMMITTED <strong>{chips(state.streetContributions[state.humanSeat],bb)}</strong></span></div><div className="action-grid"><Button variant="danger" disabled={!legal?.fold || busy} onClick={() => act({kind:"fold"})}>Fold</Button><Button variant="secondary" disabled={!legal?.check || busy} onClick={() => act({kind:"check"})}>Check</Button><Button disabled={!legal?.call || busy} onClick={() => act({kind:"call"})}>Call {legal?.call ? chips(legal.toCall,bb) : ""}</Button></div><div className="raise-box"><label htmlFor="raise">Raise to <strong>{chips(raiseTo,bb)}</strong></label><input id="raise" type="range" min={legal?.minRaiseTo || 0} max={legal?.maxRaiseTo || 0} step="1" value={raiseTo} disabled={!canRaise || busy} onChange={e => setRaiseTo(Number(e.target.value))}/><div className="range-label"><span>{chips(legal?.minRaiseTo || undefined,bb)}</span><span>{chips(legal?.maxRaiseTo || undefined,bb)}</span></div><div className="action-grid"><Button variant="secondary" disabled={!canRaise || busy} onClick={() => act({kind:"raiseTo",target:raiseTo})}>Raise to {chips(raiseTo,bb)}</Button><Button variant="secondary" disabled={!canRaise || busy} onClick={() => act({kind:"raiseTo",target:legal!.maxRaiseTo!})}>All in</Button></div></div></div>}
-      {state?.terminal && <div className="terminal-panel"><span className="eyebrow">HAND COMPLETE</span><strong>{state.terminal.payoffs[state.humanSeat] >= 0 ? "+" : ""}{chips(state.terminal.payoffs[state.humanSeat],bb)}</strong><p>{completed ? `Replay ready · ${completed.publicActions.length} public actions` : "Completed-hand detail unavailable"}</p><Button onClick={start} disabled={busy}><RotateCcw size={16}/> Next hand</Button></div>}
+      {state?.terminal && <div className="terminal-panel"><span className="eyebrow">HAND COMPLETE</span><strong>{state.terminal.payoffs[state.humanSeat] >= 0 ? "+" : ""}{chips(state.terminal.payoffs[state.humanSeat],bb)}</strong><p>{completed ? `Replay ready · ${completed.publicActions.length} public actions` : "Completed-hand detail unavailable"}</p><Button onClick={start} disabled={busy}><RotateCcw size={16}/> Next hand</Button>{completed && <Button asChild variant="secondary"><Link href="/study">Inspect this hand</Link></Button>}</div>}
       {error && <p className="error-banner" role="alert"><AlertCircle size={17}/>{error}</p>}
       <div className="boundary-note"><span>INFORMATION BOUNDARY</span><p>Only your cards and public actions appear during a hand. Opponent cards remain hidden unless shown at showdown.</p></div>
     </aside></div>
