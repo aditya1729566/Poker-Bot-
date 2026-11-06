@@ -27,6 +27,16 @@ The `match` command requires an even hand count: each chance deal is played twic
 
 The Python benchmark runner reads the predeclared flat-YAML manifest, runs every opponent on validation, records SHA-256 hashes, and sizes final tests from validation variance. Its `freeze` step requires a clean source commit; `final` refuses a second run against the same frozen candidate. Do not use `final` until a candidate has passed validation and the build has been regenerated from the clean commit.
 
+For a timed experiment, commit all source and config changes first, then reconfigure and rebuild so `build_info.hpp` contains that commit and a clean-tree flag:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+python3 python/build_preflight.py
+```
+
+`./build/pokerzero build-info` prints the embedded commit, dirty flag, build type, compiler, and platform without starting a game. The no-match Python preflight compares that response with the clean current Git commit and independently hashes the executable. The benchmark, E-001, and E-002 controllers run the same check before launching matches and pin that executable hash for subsequent matches. A source commit after the last configure requires another configure and build. CMake's `configure_file` rewrites the generated header only when its contents change, so a clean metadata refresh rebuilds the CLI translation unit rather than the game library.
+
 ## Rules and information boundary
 
 The initial game uses two 10,000-unit stacks, small blind 50, big blind 100, no antes or rake. The button posts the small blind and acts first before the flop; the big blind acts first afterward. `RaiseTo` is the player's total commitment on the current street. The engine limits raises to effective stacks and supports short all-in raises, uncalled-wager refunds, all-in runouts, and tied showdowns.

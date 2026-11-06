@@ -11,6 +11,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
+from build_preflight import verify_build
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "experiments/e001.json"
@@ -67,7 +68,9 @@ def verify_inputs(data: dict) -> dict:
     commit, dirty = git_state()
     if dirty:
         raise RuntimeError("E-001 requires a clean committed source tree")
+    build = verify_build(ROOT, ROOT / "build/pokerzero")
     return {"source_commit": commit, "source_tree_sha256": source_tree_sha256(),
+            "binary_sha256": build["binary_sha256"], "build_info": build["build_info"],
             "artifact_sha256": sha256(artifact), "manifest_sha256": sha256(MANIFEST),
             "benchmark_manifest_sha256": sha256(ROOT / "benchmarks/manifest.yaml"),
             "game_config_sha256": sha256(ROOT / "configs/game.yaml"),
@@ -115,6 +118,7 @@ def run_all() -> None:
                            "--agent2", opponent, "--hands", str(data["hands_per_arm_per_seed_opponent"]),
                            "--seed", str(seed), "--cohort", "development", "--output", str(report_path),
                            "--diagnostics-prefix", str(prefix)]
+                verify_build(ROOT, ROOT / "build/pokerzero", provenance["binary_sha256"])
                 progress["runs"][name] = {"status": "running", "command": command, "started_utc_epoch": time.time()}
                 save_progress(progress)
                 print(f"START {name}", flush=True)

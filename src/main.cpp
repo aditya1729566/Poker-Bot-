@@ -31,6 +31,7 @@ std::uint64_t number(const std::string& text) {
 }
 void usage() {
   std::cerr << "Usage:\n"
+            << "  pokerzero build-info\n"
             << "  pokerzero match --agent1 NAME --agent2 NAME --hands EVEN_N --seed S [--cohort development|validation|final] [--output FILE] [--diagnostics-prefix PREFIX (development only)]\n"
             << "  pokerzero train --game kuhn|leduc|hunl --algorithm cfr|cfr_plus|external_sampling_mccfr --iterations N --seed S --output FILE\n"
             << "  pokerzero evaluate --candidate FILE --game kuhn|leduc --metric exploitability\n";
@@ -153,6 +154,15 @@ int main(int argc, char** argv) {
   try {
     if (argc < 2) { usage(); return 2; }
     const std::string command = argv[1];
+    if (command == "build-info") {
+      if (argc != 2) throw std::invalid_argument("build-info takes no options");
+      std::cout << "{\"schema_version\":1,\"git_commit\":" << json_quote(POKERZERO_GIT_COMMIT)
+                << ",\"dirty_tree\":" << (POKERZERO_GIT_DIRTY ? "true" : "false")
+                << ",\"build_type\":" << json_quote(POKERZERO_BUILD_TYPE)
+                << ",\"compiler\":" << json_quote(POKERZERO_COMPILER)
+                << ",\"platform\":" << json_quote(POKERZERO_PLATFORM) << "}\n";
+      return 0;
+    }
     if (command == "train") {
       const auto opts = options(argc, argv);
       if (opts.size() != 5) throw std::invalid_argument("train requires game, algorithm, iterations, seed, output");

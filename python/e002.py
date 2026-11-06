@@ -11,6 +11,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from build_preflight import verify_build
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "experiments/e002.json"
 OUTPUT = ROOT / "artifacts/reports/e002"
@@ -39,8 +40,9 @@ def provenance() -> dict:
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     if subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip():
         raise RuntimeError("E-002 execution requires clean committed source")
+    build = verify_build(ROOT, ROOT / "build/pokerzero")
     return {"source_commit": commit, "manifest_sha256": sha256(MANIFEST),
-            "binary_sha256": sha256(ROOT / "build/pokerzero"),
+            "binary_sha256": build["binary_sha256"], "build_info": build["build_info"],
             "game_config_sha256": sha256(ROOT / "configs/game.yaml"),
             "benchmark_manifest_sha256": sha256(ROOT / "benchmarks/manifest.yaml")}
 
@@ -83,6 +85,7 @@ def run_all() -> None:
                    "--agent2", "equity", "--hands", "10000", "--seed", str(seed),
                    "--cohort", "development", "--output", str(report),
                    "--diagnostics-prefix", str(prefix)]
+        verify_build(ROOT, ROOT / "build/pokerzero", source["binary_sha256"])
         progress["runs"][name] = {"status": "running", "command": command,
                                   "started_utc_epoch": time.time()}
         save_progress(progress)

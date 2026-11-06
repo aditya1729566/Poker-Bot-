@@ -13,6 +13,7 @@ import math
 import subprocess
 from pathlib import Path
 
+from build_preflight import verify_build
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "benchmarks/manifest.yaml"
@@ -69,6 +70,8 @@ def candidate_paths(candidate: Path) -> tuple[Path, Path]:
 
 
 def run_benchmark(candidate: Path, cohort: str, config: dict[str, str], frozen: dict | None) -> Path:
+    build = verify_build(ROOT, ROOT / "build/pokerzero",
+                         frozen["binary_sha256"] if frozen else None)
     validation_dir, final_dir = candidate_paths(candidate)
     directory = validation_dir if cohort == "validation" else final_dir
     if cohort == "final" and directory.exists():
@@ -81,6 +84,7 @@ def run_benchmark(candidate: Path, cohort: str, config: dict[str, str], frozen: 
     seed = int(config["validation_seed" if cohort == "validation" else "stage4_final_seed"])
     results: dict[str, dict] = {}
     for opponent in opponents:
+        verify_build(ROOT, ROOT / "build/pokerzero", build["binary_sha256"])
         hands = int(config["pilot_hands"]) if cohort == "validation" else int(frozen["planned_hands"][opponent])
         output = directory / f"{opponent}.json"
         command = [str(ROOT / "build/pokerzero"), "match", "--agent1", f"restricted:{candidate}",
@@ -101,6 +105,7 @@ def run_benchmark(candidate: Path, cohort: str, config: dict[str, str], frozen: 
             results[opponent] = {"failure_reason": "experiment time budget exceeded"}
         (directory / "summary.json").write_text(json.dumps({
             "cohort": cohort, "candidate_sha256": sha256(candidate),
+            "binary_sha256": build["binary_sha256"], "build_info": build["build_info"],
             "source_tree_sha256": source_tree_sha256(), "manifest_sha256": sha256(MANIFEST),
             "game_config_sha256": sha256(ROOT / config["game_config"]),
             "action_config_sha256": sha256(ROOT / config["action_abstraction_config"]),
@@ -112,6 +117,7 @@ def run_benchmark(candidate: Path, cohort: str, config: dict[str, str], frozen: 
 
 
 def freeze(candidate: Path, config: dict[str, str]) -> Path:
+    build = verify_build(ROOT, ROOT / "build/pokerzero")
     validation_dir, _ = candidate_paths(candidate)
     summary = json.loads((validation_dir / "summary.json").read_text())
     opponents = config["opponents"].split(",")
@@ -121,6 +127,8 @@ def freeze(candidate: Path, config: dict[str, str]) -> Path:
         raise RuntimeError("source or manifest changed after validation")
     if summary["candidate_sha256"] != sha256(candidate):
         raise RuntimeError("candidate changed after validation")
+    if summary.get("binary_sha256") != build["binary_sha256"]:
+        raise RuntimeError("executable changed after validation")
     commit, dirty = git_state()
     if commit == "unborn" or dirty:
         raise RuntimeError("freeze requires a clean source commit")
@@ -142,6 +150,7 @@ def freeze(candidate: Path, config: dict[str, str]) -> Path:
         planned[opponent] = max(4, min(requested, cap) // 2 * 2)
         precision_feasible[opponent] = planned[opponent] >= requested
     frozen = {"candidate_sha256": sha256(candidate), "source_tree_sha256": source_tree_sha256(),
+              "binary_sha256": build["binary_sha256"], "build_info": build["build_info"],
               "source_commit": commit, "manifest_sha256": sha256(MANIFEST),
               "game_config_sha256": sha256(ROOT / config["game_config"]),
               "action_config_sha256": sha256(ROOT / config["action_abstraction_config"]),
@@ -155,6 +164,9 @@ def freeze(candidate: Path, config: dict[str, str]) -> Path:
 def verify_frozen(candidate: Path, config: dict[str, str]) -> dict:
     path = REPORTS / f"frozen_{sha256(candidate)[:12]}_{source_tree_sha256()[:12]}.json"
     frozen = json.loads(path.read_text())
+    if "binary_sha256" not in frozen:
+        raise RuntimeError("frozen manifest predates executable provenance gate")
+    verify_build(ROOT, ROOT / "build/pokerzero", frozen["binary_sha256"])
     commit, dirty = git_state()
     checks = {"candidate_sha256": sha256(candidate), "source_tree_sha256": source_tree_sha256(),
               "source_commit": commit, "manifest_sha256": sha256(MANIFEST),
