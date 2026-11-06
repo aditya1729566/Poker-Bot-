@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "E-004-street-gated-table-ablation",
+  "cohort": "development",
+  "artifact": "artifacts/strategies/hunl_50k.bin",
+  "artifact_sha256": "82f4d59e74b674b249c2acd5b2a626373e1b565fbd9741888fb030d8570f5eeb",
+  "action_abstraction": "hunl_abs_v1",
+  "minimum_table_visits": 10,
+  "arms": {
+    "full": {"preflop_table": true, "postflop_table": true, "agent_prefix": "restricted:"},
+    "preflop_only": {"preflop_table": true, "postflop_table": false, "agent_prefix": "restricted_preflop:"},
+    "postflop_only": {"preflop_table": false, "postflop_table": true, "agent_prefix": "restricted_postflop:"},
+    "equity_only": {"preflop_table": false, "postflop_table": false, "agent_prefix": "restricted_none:"}
+  },
+  "root_seeds": [60, 61, 62],
+  "opponents": ["random", "passive", "tight_aggressive", "loose_aggressive", "equity"],
+  "opponent_versions": ["random_v1", "passive_v1", "tight_aggressive_v1", "loose_aggressive_v1", "equity_v1"],
+  "hands_per_arm_opponent_seed": 10000,
+  "action_budget_ms": 25,
+  "experiment_cap_seconds": 28800,
+  "peak_rss_cap_bytes": 12884901888,
+  "primary_treatment": "postflop_only",
+  "primary_control": "full",
+  "primary_opponents": ["tight_aggressive", "loose_aggressive", "equity"],
+  "primary_metric": "equal_weight_mean_treatment_minus_control_mbb_per_hand",
+  "primary_interval": "normal_standard_error_over_shared_seed_deal_block_clusters",
+  "passive_regression_margin_mbb_per_hand": -500,
+  "sample_unit": "root_seed_and_duplicate_deal_block",
+  "diagnostics_schema": "e001_match_diagnostics_v1",
+  "selection_policy": "No candidate promotion from this development experiment",
+  "stop_policy": "Stop on runtime, memory, provenance, or accounting failure; retain failures and partial output."
+}

@@ -12,10 +12,12 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <sys/resource.h>
+#include <tuple>
 #ifdef __APPLE__
 #include <sys/sysctl.h>
 #endif
@@ -148,6 +150,22 @@ std::uint64_t peak_rss_bytes() {
   return static_cast<std::uint64_t>(usage.ru_maxrss) * 1024;
 #endif
 }
+struct RestrictedSpec {
+  std::string path;
+  bool preflop_table;
+  bool postflop_table;
+};
+std::optional<RestrictedSpec> restricted_spec(const std::string& name) {
+  for (const auto& [prefix, preflop, postflop] : {
+           std::tuple{"restricted:", true, true},
+           std::tuple{"restricted_preflop:", true, false},
+           std::tuple{"restricted_postflop:", false, true},
+           std::tuple{"restricted_none:", false, false}}) {
+    const std::string label(prefix);
+    if (name.rfind(label, 0) == 0) return RestrictedSpec{name.substr(label.size()), preflop, postflop};
+  }
+  return std::nullopt;
+}
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -250,7 +268,8 @@ int main(int argc, char** argv) {
     if (!diagnostics_prefix.empty() && cohort != "development")
       throw std::invalid_argument("E-001 diagnostics are limited to the development cohort");
     auto construct = [](const std::string& name) -> std::unique_ptr<IAgent> {
-      if (name.rfind("restricted:", 0) == 0) return std::make_unique<RestrictedAgent>(name.substr(11));
+      if (const auto spec = restricted_spec(name))
+        return std::make_unique<RestrictedAgent>(spec->path, spec->preflop_table, spec->postflop_table);
       return make_agent(name);
     };
     auto first = construct(agent1), second = construct(agent2);
@@ -277,7 +296,8 @@ int main(int argc, char** argv) {
     }
     const auto timestamp = utc_now();
     std::ostringstream json;
-    const bool restricted_match = agent1.rfind("restricted:", 0) == 0 || agent2.rfind("restricted:", 0) == 0;
+    const auto first_spec = restricted_spec(agent1), second_spec = restricted_spec(agent2);
+    const bool restricted_match = first_spec.has_value() || second_spec.has_value();
     json << "{\"schema_version\":1,\"run_id\":\"" << cohort << '-' << seed << '-' << timestamp
          << "\",\"utc_timestamp\":\"" << timestamp << "\",\"git_commit\":\"" << POKERZERO_GIT_COMMIT
          << "\",\"dirty_tree\":" << (POKERZERO_GIT_DIRTY ? "true" : "false")
@@ -287,7 +307,7 @@ int main(int argc, char** argv) {
          << fnv_file("configs/game.yaml") << "\",\"action_abstraction\":\""
          << (restricted_match ? "hunl_abs_v1" : "none") << "\",\"action_config_hash_fnv1a64\":\""
          << fnv_file("configs/action_abstraction.yaml") << "\",\"checkpoint_hash_fnv1a64\":"
-         << (agent1.rfind("restricted:", 0) == 0 ? json_quote(fnv_file(agent1.substr(11))) : "null")
+         << (first_spec ? json_quote(fnv_file(first_spec->path)) : "null")
          << ",\"restricted_inference\":" << (restricted_match ? "\"min_policy_visits_10_v2\"" : "null")
          << ",\"cohort\":" << json_quote(cohort) << ",\"rng_derivation\":\"domain_separated_splitmix64_v2\""
          << ",\"stage\":" << (restricted_match ? 4 : 1) << ",\"agent1\":" << json_quote(agent1)

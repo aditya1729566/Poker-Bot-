@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <set>
 #include <sstream>
 #include <unordered_set>
@@ -244,6 +245,78 @@ void test_equity_and_baselines() {
   try { (void)estimate_uniform_equity(observation, zero, 0); } catch (const std::invalid_argument&) { rejected = true; }
   require(rejected, "zero equity samples rejected");
 }
+void test_street_gated_policy() {
+  Game game = Game::reset(700);
+  std::vector<Observation> decisions;
+  for (int street = 0; street < 4; ++street) {
+    decisions.push_back(game.observe(game.actor()));
+    if (street == 0) { game.step({ActionKind::Call}); game.step({ActionKind::Check}); }
+    else if (street < 3) { game.step({ActionKind::Check}); game.step({ActionKind::Check}); }
+  }
+  const std::string path = "/tmp/pokerzero_e004_gate_test.strategy";
+  {
+    std::ofstream file(path);
+    file << "PZ_HUNL_ABS_V1 700 100 4\n";
+    EquityBuckets buckets;
+    for (const auto& observation : decisions) {
+      const auto choices = restricted_actions(observation);
+      file << restricted_info_key(observation, choices, buckets) << ' ' << choices.size();
+      for (std::size_t i = 0; i < choices.size(); ++i) file << ' ' << (i == 0 ? 100 : 0);
+      file << '\n';
+    }
+    require(static_cast<bool>(file), "write synthetic street-gate artifact");
+  }
+  RestrictedAgent legacy_full(path), full(path, true, true), preflop_only(path, true, false),
+      postflop_only(path, false, true), none(path, false, false);
+  BaselineAgent equity(BaselineStyle::Equity);
+  for (std::size_t street = 0; street < decisions.size(); ++street) {
+    const auto& observation = decisions[street];
+    require(static_cast<int>(observation.street) == static_cast<int>(street), "four street observations");
+    Pcg32 legacy_rng(1000 + street), full_rng(1000 + street), none_rng(2000 + street), equity_rng(2000 + street);
+    const auto legacy_action = legacy_full.act(observation, legacy_rng);
+    const auto full_action = full.act(observation, full_rng);
+    const auto none_action = none.act(observation, none_rng);
+    const auto equity_action = equity.act(observation, equity_rng);
+    require(legacy_action == full_action && !full.last_decision_info().used_fallback,
+            "full gate matches existing policy on every street");
+    require(none_action == equity_action && none.last_decision_info().used_fallback,
+            "disabled tables match existing equity policy on every street");
+    require(observation.legal.contains(full_action) && observation.legal.contains(none_action),
+            "street-gated actions legal");
+    Pcg32 pre_rng(3000 + street), post_rng(4000 + street);
+    const auto pre_action = preflop_only.act(observation, pre_rng);
+    const auto post_action = postflop_only.act(observation, post_rng);
+    require(observation.legal.contains(pre_action) && observation.legal.contains(post_action),
+            "partial-gate actions legal");
+    require(preflop_only.last_decision_info().used_fallback == (street != 0) &&
+            postflop_only.last_decision_info().used_fallback == (street == 0),
+            "table lookup is gated by street");
+  }
+  const auto deck_a = shuffled_deck(701);
+  for (int street = 0; street < 2; ++street) {
+    auto deck_b = deck_a;
+    const int hidden_first = street == 0 ? 1 : 0;
+    const int hidden_second = street == 0 ? 3 : 2;
+    std::swap(deck_b[hidden_first], deck_b[12]);
+    std::swap(deck_b[hidden_second], deck_b[13]);
+    std::swap(deck_b[9], deck_b[14]);
+    Game a = Game::reset_with_deck(deck_a), b = Game::reset_with_deck(deck_b);
+    if (street == 1) {
+      a.step({ActionKind::Call}); b.step({ActionKind::Call});
+      a.step({ActionKind::Check}); b.step({ActionKind::Check});
+    }
+    const auto oa = a.observe(a.actor()), ob = b.observe(b.actor());
+    require(oa.hole == ob.hole && oa.board == ob.board && oa.history == ob.history,
+            "hidden-card/future-deck alternatives preserve observation");
+    for (const auto gates : {std::array<bool, 2>{true, true}, {true, false}, {false, true}, {false, false}}) {
+      RestrictedAgent first(path, gates[0], gates[1]), second(path, gates[0], gates[1]);
+      Pcg32 rng_a(802 + street), rng_b(802 + street);
+      require(first.act(oa, rng_a) == second.act(ob, rng_b),
+              "gated policy action invariant to hidden cards and future deck");
+    }
+  }
+  std::filesystem::remove(path);
+}
 void test_pairing() {
   const auto [first, second] = paired_decks(123);
   for (int i = 4; i < 52; ++i) require(first[i] == second[i], "paired future deck identical");
@@ -387,6 +460,24 @@ void test_match_diagnostics() {
   }
   require(candidate_actions > 0 && fallback_actions == table_report.fallbacks[0],
           "fallback decisions reconcile with aggregate count");
+  RestrictedAgent gated_trace_agent(path, false, true), gated_plain_agent(path, false, true);
+  BaselineAgent passive_trace(BaselineStyle::Passive), passive_plain(BaselineStyle::Passive);
+  CollectedDiagnostics gated_trace;
+  const auto gated_report = run_paired_match(gated_trace_agent, passive_trace, 20, 53, 1000.0, &gated_trace);
+  const auto plain_report = run_paired_match(gated_plain_agent, passive_plain, 20, 53, 1000.0);
+  Chips traced_net = 0;
+  std::array<Chips, 2> traced_seats{};
+  for (const auto& block : gated_trace.blocks) {
+    traced_net += block.candidate_leg_returns[0] + block.candidate_leg_returns[1];
+    traced_seats[0] += block.candidate_leg_returns[0];
+    traced_seats[1] += block.candidate_leg_returns[1];
+  }
+  require(gated_report.net_chips == plain_report.net_chips &&
+          gated_report.agent0_by_button == plain_report.agent0_by_button &&
+          gated_report.actions == gated_trace.actions.size(),
+          "gated diagnostics on/off preserve match outcomes and action counts");
+  require(traced_net == gated_report.net_chips[0] && traced_seats == gated_report.agent0_by_button,
+          "gated diagnostic block/seat accounting");
   std::filesystem::remove(path);
   std::ostringstream block_json, action_json;
   JsonlMatchDiagnostics writer(block_json, action_json);
@@ -480,6 +571,7 @@ int main() {
     test_leakage_and_replay();
     test_random_hands();
     test_equity_and_baselines();
+    test_street_gated_policy();
     test_pairing();
     test_player_label_swap();
     test_match_diagnostics();

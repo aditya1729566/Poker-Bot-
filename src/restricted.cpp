@@ -215,7 +215,9 @@ void RestrictedSolver::save(const std::string& path) const {
   if (!file) throw std::runtime_error("restricted artifact write failed");
 }
 
-RestrictedAgent::RestrictedAgent(const std::string& artifact_path) {
+RestrictedAgent::RestrictedAgent(const std::string& artifact_path, bool preflop_table,
+                                 bool postflop_table)
+    : preflop_table_(preflop_table), postflop_table_(postflop_table) {
   std::ifstream file(artifact_path);
   std::string magic;
   std::uint64_t seed = 0, iterations = 0;
@@ -242,6 +244,12 @@ RestrictedAgent::RestrictedAgent(const std::string& artifact_path) {
 }
 
 Action RestrictedAgent::act(const Observation& observation, Pcg32& policy_rng) {
+  const bool use_table = observation.street == Street::Preflop ? preflop_table_ : postflop_table_;
+  if (!use_table) {
+    ++fallbacks_;
+    last_decision_ = {true, true, std::nullopt};
+    return fallback_.act(observation, policy_rng);
+  }
   const auto choices = restricted_actions(observation);
   const auto key = restricted_info_key(observation, choices, buckets_);
   const auto found = policy_.find(key);

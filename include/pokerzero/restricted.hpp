@@ -56,7 +56,8 @@ class RestrictedSolver {
 
 class RestrictedAgent final : public IAgent {
  public:
-  explicit RestrictedAgent(const std::string& artifact_path);
+  explicit RestrictedAgent(const std::string& artifact_path, bool preflop_table = true,
+                           bool postflop_table = true);
   Action act(const Observation& observation, Pcg32& policy_rng) override;
   void reset_match() override { fallbacks_ = 0; last_decision_ = {}; }
   [[nodiscard]] std::uint64_t fallback_count() const override { return fallbacks_; }
@@ -71,6 +72,8 @@ class RestrictedAgent final : public IAgent {
   EquityBuckets buckets_;
   BaselineAgent fallback_{BaselineStyle::Equity};
   std::unordered_map<std::string, PolicyNode> policy_;
+  bool preflop_table_ = true;
+  bool postflop_table_ = true;
   std::uint64_t fallbacks_ = 0;
   PolicyDecisionInfo last_decision_{};
 };

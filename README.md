@@ -25,6 +25,8 @@ python3 python/benchmark.py validation --candidate artifacts/strategies/hunl_pil
 
 The `match` command requires an even hand count: each chance deal is played twice, preserving each agent's private-card packet and board while swapping the button. Available names are `random`, `passive`, `tight_aggressive`, `loose_aggressive`, `equity`, and `restricted:PATH`. The report's 95% interval treats each duplicate pair as one sample. Fixed baselines and pilots are not confirmatory evidence of strategic strength. A matching deck seed, button, and action transcript reproduce the same hand; the test suite exercises this replay path.
 
+The E-004 development ablation adds `restricted_preflop:PATH`, `restricted_postflop:PATH`, and `restricted_none:PATH` to enable the frozen table only before the flop, only after the flop, or on neither street group. These names retain the existing equity fallback and do not train a new policy. See [the predeclared manifest](experiments/e004.json).
+
 The Python benchmark runner reads the predeclared flat-YAML manifest, runs every opponent on validation, records SHA-256 hashes, and sizes final tests from validation variance. Its `freeze` step requires a clean source commit; `final` refuses a second run against the same frozen candidate. Do not use `final` until a candidate has passed validation and the build has been regenerated from the clean commit.
 
 For a timed experiment, commit all source and config changes first, then reconfigure and rebuild so `build_info.hpp` contains that commit and a clean-tree flag:
