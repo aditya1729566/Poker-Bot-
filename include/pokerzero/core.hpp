@@ -87,12 +87,21 @@ struct WeightedAction {
   double probability;
 };
 
+// Policy-side metadata about the most recent action. It contains no simulator
+// state and is read only by the trusted match runner after act() returns.
+struct PolicyDecisionInfo {
+  bool available = false;
+  bool used_fallback = false;
+  std::optional<double> table_visits;
+};
+
 class IAgent {
  public:
   virtual ~IAgent() = default;
   virtual Action act(const Observation& observation, Pcg32& policy_rng) = 0;
   virtual void reset_match() {}
   [[nodiscard]] virtual std::uint64_t fallback_count() const { return 0; }
+  [[nodiscard]] virtual PolicyDecisionInfo last_decision_info() const { return {}; }
 };
 
 class IStrategy {

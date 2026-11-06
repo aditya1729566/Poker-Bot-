@@ -245,9 +245,11 @@ Action RestrictedAgent::act(const Observation& observation, Pcg32& policy_rng) {
   const auto choices = restricted_actions(observation);
   const auto key = restricted_info_key(observation, choices, buckets_);
   const auto found = policy_.find(key);
+  last_decision_ = {true, false, found == policy_.end() ? std::nullopt : std::optional<double>(found->second.visits)};
   if (found == policy_.end() || found->second.actions != static_cast<int>(choices.size()) ||
       found->second.visits < 10.0) {
     ++fallbacks_;
+    last_decision_.used_fallback = true;
     return fallback_.act(observation, policy_rng);
   }
   std::vector<WeightedAction> distribution;
@@ -257,6 +259,7 @@ Action RestrictedAgent::act(const Observation& observation, Pcg32& policy_rng) {
   for (const auto& entry : distribution) sum += entry.probability;
   if (sum == 0) {
     ++fallbacks_;
+    last_decision_.used_fallback = true;
     return fallback_.act(observation, policy_rng);
   }
   return sample_action(observation, distribution, policy_rng);

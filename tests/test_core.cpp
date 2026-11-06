@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <set>
+#include <sstream>
 #include <unordered_set>
 #include <iostream>
 #include <stdexcept>
@@ -63,7 +64,7 @@ void test_cards_and_rng() {
   // A deliberately loose deterministic smoke check; uniformity follows from rejection sampling.
   for (const int count : first_card_counts) require(count > 1500 && count < 2350, "shuffle first-card frequency");
   std::unordered_set<std::uint64_t> allocated_seeds;
-  for (const std::uint64_t root : {42ULL, 43ULL, 44ULL})
+  for (const std::uint64_t root : {42ULL, 43ULL, 44ULL, 51ULL, 52ULL, 53ULL})
     for (std::uint64_t block = 0; block < 100000; ++block)
       require(allocated_seeds.insert(derive_stream_seed(root, kMatchDealDomain, block)).second,
               "declared match cohorts have disjoint deal seeds");
@@ -259,6 +260,91 @@ void test_pairing() {
           "paired match accounting");
   require(report.timeouts == 0 && report.illegal_actions == 0, "paired match action validity");
 }
+struct CollectedDiagnostics final : MatchDiagnosticObserver {
+  std::vector<ActionDiagnostic> actions;
+  std::vector<BlockDiagnostic> blocks;
+  void on_action(const ActionDiagnostic& action) override { actions.push_back(action); }
+  void on_block(const BlockDiagnostic& block) override { blocks.push_back(block); }
+};
+std::string stable_trace(const CollectedDiagnostics& diagnostics) {
+  std::ostringstream trace;
+  for (const auto& block : diagnostics.blocks)
+    trace << block.seed << ':' << block.block << ':' << block.candidate_leg_returns[0] << ':'
+          << block.candidate_leg_returns[1] << ';';
+  for (const auto& action : diagnostics.actions)
+    trace << action.block << ':' << action.leg << ':' << action.action_index << ':' << action.actor
+          << ':' << action.button << ':' << static_cast<int>(action.street) << ':' << action.pot
+          << ':' << static_cast<int>(action.proposed.kind) << ':' << action.proposed.target
+          << ':' << static_cast<int>(action.chosen.kind) << ':' << action.chosen.target
+          << ':' << action.policy.used_fallback << ':' << action.candidate_hand_return << ';';
+  return trace.str();
+}
+void test_match_diagnostics() {
+  RandomAgent first_a, second_a, first_b, second_b, first_plain, second_plain;
+  CollectedDiagnostics a, b;
+  const auto report_a = run_paired_match(first_a, second_a, 50, 51, 25.0, &a);
+  const auto report_b = run_paired_match(first_b, second_b, 50, 51, 25.0, &b);
+  const auto report_plain = run_paired_match(first_plain, second_plain, 50, 51);
+  require(stable_trace(a) == stable_trace(b), "deterministic block and action trace");
+  require(a.blocks.size() == report_a.blocks && a.actions.size() == report_a.actions,
+          "diagnostic row counts reconcile with report");
+  require(report_a.net_chips == report_b.net_chips && report_a.agent0_by_button == report_b.agent0_by_button,
+          "diagnostic mode preserves match outcomes");
+  require(report_a.net_chips == report_plain.net_chips &&
+          report_a.agent0_by_button == report_plain.agent0_by_button,
+          "optional diagnostics leave uninstrumented outcomes unchanged");
+  Chips net = 0;
+  std::array<Chips, 2> seat_returns{};
+  for (std::size_t index = 0; index < a.blocks.size(); ++index) {
+    const auto& block = a.blocks[index];
+    require(block.seed == 51 && block.block == index, "block seed/index trace");
+    net += block.candidate_leg_returns[0] + block.candidate_leg_returns[1];
+    seat_returns[0] += block.candidate_leg_returns[0];
+    seat_returns[1] += block.candidate_leg_returns[1];
+  }
+  require(net == report_a.net_chips[0] && seat_returns == report_a.agent0_by_button,
+          "block returns reconcile with aggregate net and seats");
+  std::uint64_t timeouts = 0, illegal = 0;
+  for (const auto& action : a.actions) {
+    require(action.button == action.leg && action.actor >= 0 && action.actor <= 1,
+            "diagnostic button and actor");
+    require(action.candidate_hand_return == a.blocks[action.block].candidate_leg_returns[action.leg],
+            "action hand return reconciles with block");
+    timeouts += action.timeout;
+    illegal += action.illegal;
+    require(!action.policy.available && !action.policy.used_fallback && !action.policy.table_visits,
+            "non-table policy has no table metadata");
+  }
+  require(timeouts == report_a.timeouts && illegal == report_a.illegal_actions,
+          "diagnostic failures reconcile with aggregate failures");
+  RestrictedSolver solver(51);
+  solver.train(10);
+  const std::string path = "/tmp/pokerzero_e001_test.strategy";
+  solver.save(path);
+  RestrictedAgent control(path);
+  BaselineAgent passive(BaselineStyle::Passive);
+  CollectedDiagnostics table_trace;
+  const auto table_report = run_paired_match(control, passive, 20, 52, 25.0, &table_trace);
+  std::uint64_t candidate_actions = 0, fallback_actions = 0;
+  for (const auto& action : table_trace.actions) if (action.actor == 0) {
+    ++candidate_actions;
+    require(action.policy.available, "restricted policy metadata available");
+    fallback_actions += action.policy.used_fallback;
+    if (!action.policy.used_fallback) require(action.policy.table_visits && *action.policy.table_visits >= 10,
+                                               "learned-table decision meets visit threshold");
+  }
+  require(candidate_actions > 0 && fallback_actions == table_report.fallbacks[0],
+          "fallback decisions reconcile with aggregate count");
+  std::filesystem::remove(path);
+  std::ostringstream block_json, action_json;
+  JsonlMatchDiagnostics writer(block_json, action_json);
+  writer.on_block(a.blocks.front()); writer.on_action(a.actions.front());
+  require(block_json.str().find("candidate_leg_returns_chips") != std::string::npos &&
+          action_json.str().find("table_visits") != std::string::npos &&
+          action_json.str().find("hole") == std::string::npos &&
+          action_json.str().find("deck") == std::string::npos,
+          "JSONL contains public diagnostics but no hidden cards or deck");
+}
 void test_small_solver() {
   SmallSolver kuhn(SmallGameKind::Kuhn);
   const double initial = kuhn.exploitability();
@@ -322,6 +408,14 @@ void test_restricted_abstraction() {
   const auto b = Game::reset_with_deck(deck2).observe(0);
   Pcg32 first_rng(55), second_rng(55);
   require(agent.act(a, first_rng) == agent.act(b, second_rng), "restricted agent hidden-card leakage check");
+  const auto first_info = agent.last_decision_info();
+  Pcg32 repeated_rng(55);
+  (void)agent.act(a, repeated_rng);
+  const auto repeated_info = agent.last_decision_info();
+  require(first_info.available == repeated_info.available &&
+          first_info.used_fallback == repeated_info.used_fallback &&
+          first_info.table_visits == repeated_info.table_visits,
+          "restricted diagnostics independent of hidden cards and future deck");
   std::filesystem::remove(path);
 }
 }  // namespace
@@ -335,6 +429,7 @@ int main() {
     test_random_hands();
     test_equity_and_baselines();
     test_pairing();
+    test_match_diagnostics();
     test_small_solver();
     test_restricted_abstraction();
     std::cout << "PASS " << checks << " checks\n";

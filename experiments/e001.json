@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "id": "E-001-equity-only-ablation",
+  "cohort": "development",
+  "control": "restricted:artifacts/strategies/hunl_50k.bin",
+  "treatment": "equity",
+  "frozen_artifact_sha256": "82f4d59e74b674b249c2acd5b2a626373e1b565fbd9741888fb030d8570f5eeb",
+  "root_seeds": [51, 52, 53],
+  "hands_per_arm_per_seed_opponent": 10000,
+  "action_budget_ms": 25,
+  "opponents": ["random", "passive", "tight_aggressive", "loose_aggressive", "equity"],
+  "primary_opponents": ["tight_aggressive", "loose_aggressive", "equity"],
+  "primary_metric": "equal_weight_mean_treatment_minus_control_mbb_per_hand",
+  "confidence_method": "normal_standard_error_over_seed_and_deal_block_clusters",
+  "cluster_unit": "root_seed_and_duplicate_deal_block_shared_across_opponents",
+  "pot_bands_bb": [0, 5, 20, 100],
+  "diagnostics_schema": "e001_match_diagnostics_v1",
+  "required_checks": ["complete_matrix", "exact_block_reconciliation", "paired_deal_identity", "leakage", "timeouts_reported", "no_frozen_component_change"]
+}

@@ -58,8 +58,9 @@ class RestrictedAgent final : public IAgent {
  public:
   explicit RestrictedAgent(const std::string& artifact_path);
   Action act(const Observation& observation, Pcg32& policy_rng) override;
-  void reset_match() override { fallbacks_ = 0; }
+  void reset_match() override { fallbacks_ = 0; last_decision_ = {}; }
   [[nodiscard]] std::uint64_t fallback_count() const override { return fallbacks_; }
+  [[nodiscard]] PolicyDecisionInfo last_decision_info() const override { return last_decision_; }
 
  private:
   struct PolicyNode {
@@ -71,6 +72,7 @@ class RestrictedAgent final : public IAgent {
   BaselineAgent fallback_{BaselineStyle::Equity};
   std::unordered_map<std::string, PolicyNode> policy_;
   std::uint64_t fallbacks_ = 0;
+  PolicyDecisionInfo last_decision_{};
 };
 
 }  // namespace pokerzero

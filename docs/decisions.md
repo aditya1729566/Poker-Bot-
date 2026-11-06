@@ -45,3 +45,9 @@
 ## Frozen Stage 4 outcome (2026-11-06)
 
 - The one-time final seed-44 evaluation of the frozen v2 policy passed Gate D against the predeclared weak random and passive baselines. It lost to tight-aggressive, loose-aggressive, and equity heuristics. Full paired intervals, timeouts, and the interrupted-equity continuation are in [stage4_results.md](stage4_results.md) and the ignored local `artifacts/reports/final_82f4d59e74b6_9458b55612e0/` directory. These results do not establish general strategic competitiveness.
+
+## E-001 diagnostic ablation (2026-11-06)
+
+- The optional `e001_match_diagnostics_v1` observer streams public action context and post-action policy metadata after the acting agent returns. It does not change observations, action choices, RNG draws, or the aggregate mbb/hand calculation. The action log omits hole cards, board cards, deck order, and RNG state. The block log records both candidate returns within each duplicate deal.
+- The experiment manifest fixes development roots 51, 52, and 53, the existing equity agent as treatment, the frozen restricted artifact as control, five benchmark opponents, 10,000 hands per arm and opponent and root, and the 25 ms action budget. Each arm is a new process with a fresh opponent instance. No validation or final seeds are used.
+- The primary interval uses one value per shared seed-and-block cluster after averaging the three strong-opponent treatment-minus-control differences within that cluster. Per-opponent differences are paired by the same seed and block. Timeouts and illegal actions remain in the outcome under the runner's existing check/call completion rule and are reported explicitly.

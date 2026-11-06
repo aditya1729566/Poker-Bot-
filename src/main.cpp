@@ -11,6 +11,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -30,7 +31,7 @@ std::uint64_t number(const std::string& text) {
 }
 void usage() {
   std::cerr << "Usage:\n"
-            << "  pokerzero match --agent1 NAME --agent2 NAME --hands EVEN_N --seed S [--cohort development|validation|final] [--output FILE]\n"
+            << "  pokerzero match --agent1 NAME --agent2 NAME --hands EVEN_N --seed S [--cohort development|validation|final] [--output FILE] [--diagnostics-prefix PREFIX (development only)]\n"
             << "  pokerzero train --game kuhn|leduc|hunl --algorithm cfr|cfr_plus|external_sampling_mccfr --iterations N --seed S --output FILE\n"
             << "  pokerzero evaluate --candidate FILE --game kuhn|leduc --metric exploitability\n";
 }
@@ -206,7 +207,7 @@ int main(int argc, char** argv) {
     }
     if (command != "match") { usage(); return 2; }
     validate_compiled_config();
-    std::string agent1, agent2, output, cohort = "development";
+    std::string agent1, agent2, output, diagnostics_prefix, cohort = "development";
     std::uint64_t hands = 0, seed = 0;
     bool have_seed = false;
     for (int i = 2; i < argc; i += 2) {
@@ -218,6 +219,7 @@ int main(int argc, char** argv) {
       else if (option == "--seed") { seed = number(value); have_seed = true; }
       else if (option == "--cohort") cohort = value;
       else if (option == "--output") output = value;
+      else if (option == "--diagnostics-prefix") diagnostics_prefix = value;
       else throw std::invalid_argument("unknown option: " + option);
     }
     if (agent1.empty() || agent2.empty() || hands < 4 || hands % 2 != 0 || !have_seed)
@@ -235,12 +237,34 @@ int main(int argc, char** argv) {
     }
     if (cohort != "development" && cohort != "validation" && cohort != "final")
       throw std::invalid_argument("unknown cohort");
+    if (!diagnostics_prefix.empty() && cohort != "development")
+      throw std::invalid_argument("E-001 diagnostics are limited to the development cohort");
     auto construct = [](const std::string& name) -> std::unique_ptr<IAgent> {
       if (name.rfind("restricted:", 0) == 0) return std::make_unique<RestrictedAgent>(name.substr(11));
       return make_agent(name);
     };
     auto first = construct(agent1), second = construct(agent2);
-    const auto result = run_paired_match(*first, *second, hands / 2, seed);
+    std::ofstream block_diagnostics_file, action_diagnostics_file;
+    std::unique_ptr<JsonlMatchDiagnostics> diagnostics;
+    if (!diagnostics_prefix.empty()) {
+      const std::filesystem::path prefix(diagnostics_prefix);
+      if (!prefix.parent_path().empty()) std::filesystem::create_directories(prefix.parent_path());
+      const auto blocks_path = diagnostics_prefix + ".blocks.jsonl";
+      const auto actions_path = diagnostics_prefix + ".actions.jsonl";
+      if (std::filesystem::exists(blocks_path) || std::filesystem::exists(actions_path))
+        throw std::runtime_error("diagnostics already exist; refusing to overwrite");
+      block_diagnostics_file.open(blocks_path);
+      action_diagnostics_file.open(actions_path);
+      if (!block_diagnostics_file || !action_diagnostics_file)
+        throw std::runtime_error("cannot open diagnostic outputs");
+      diagnostics = std::make_unique<JsonlMatchDiagnostics>(block_diagnostics_file, action_diagnostics_file);
+    }
+    const auto result = run_paired_match(*first, *second, hands / 2, seed, 25.0, diagnostics.get());
+    if (diagnostics) {
+      block_diagnostics_file.flush(); action_diagnostics_file.flush();
+      if (!block_diagnostics_file || !action_diagnostics_file)
+        throw std::runtime_error("cannot flush diagnostic outputs");
+    }
     const auto timestamp = utc_now();
     std::ostringstream json;
     const bool restricted_match = agent1.rfind("restricted:", 0) == 0 || agent2.rfind("restricted:", 0) == 0;
@@ -268,8 +292,12 @@ int main(int argc, char** argv) {
          << ",\"timeouts\":" << result.timeouts << ",\"illegal_actions\":" << result.illegal_actions
          << ",\"fallbacks\":[" << result.fallbacks[0] << ',' << result.fallbacks[1] << ']'
          << ",\"latency_ms_p50_p95_p99\":[" << result.latency_p50_ms << ',' << result.latency_p95_ms << ',' << result.latency_p99_ms << ']'
-         << ",\"seconds\":" << result.seconds << ",\"peak_rss_bytes\":" << peak_rss_bytes()
-         << ",\"failure_reason\":null}\n";
+         << ",\"seconds\":" << result.seconds << ",\"peak_rss_bytes\":" << peak_rss_bytes();
+    if (diagnostics)
+      json << ",\"diagnostics_schema\":\"e001_match_diagnostics_v1\",\"diagnostic_blocks_path\":"
+           << json_quote(diagnostics_prefix + ".blocks.jsonl")
+           << ",\"diagnostic_actions_path\":" << json_quote(diagnostics_prefix + ".actions.jsonl");
+    json << ",\"failure_reason\":null}\n";
     const std::string report = json.str();
     if (!output.empty()) {
       const std::filesystem::path path(output);
