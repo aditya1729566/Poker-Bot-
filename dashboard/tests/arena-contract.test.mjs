@@ -24,3 +24,15 @@ test("mismatched API versions are rejected", async () => {
   try { await assert.rejects(arena.checkpoints(), ArenaError); }
   finally { globalThis.fetch = original; }
 });
+
+test("restricted fields are rejected in success and error payloads", async () => {
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response(JSON.stringify({ apiVersion: "arena.v1", checkpoints: [], dealSeed: "123" }), { status: 200 });
+    await assert.rejects(arena.checkpoints(), /restricted field/);
+    globalThis.fetch = async () => new Response(JSON.stringify({ apiVersion: "arena.v1", message: "bad", rngState: 4 }), { status: 422 });
+    await assert.rejects(arena.checkpoints(), /restricted field/);
+    globalThis.fetch = async () => new Response(JSON.stringify({ apiVersion: "arena.v1", state: { opponentHole: ["Ah","As"], terminal: null } }), { status: 200 });
+    await assert.rejects(arena.state("opaque"), /opponent card/);
+  } finally { globalThis.fetch = original; }
+});

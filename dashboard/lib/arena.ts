@@ -22,6 +22,21 @@ export class ArenaError extends Error {
   constructor(message: string, status: number, state?: ArenaState) { super(message); this.status = status; this.state = state; }
 }
 
+function assertPublicPayload(value: unknown): void {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) { value.forEach(assertPublicPayload); return; }
+  const object = value as Record<string, unknown>;
+  for (const [key, field] of Object.entries(object)) {
+    if (/seed|deck|rng|future|replayKey|trainingTarget|privateState/i.test(key)) {
+      throw new ArenaError("The local engine returned a restricted field.", 502);
+    }
+    assertPublicPayload(field);
+  }
+  if ("opponentHole" in object && !object.terminal && object.opponentHole !== null) {
+    throw new ArenaError("The local engine revealed an opponent card before hand completion.", 502);
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try { response = await fetch(`${base}${path}`, { ...init, cache: "no-store", headers: { "Content-Type": "application/json", ...init?.headers } }); }
@@ -31,6 +46,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!data || typeof data !== "object" || !("apiVersion" in data) || data.apiVersion !== "arena.v1") {
     throw new ArenaError("The local engine uses a different API version.", response.status);
   }
+  assertPublicPayload(data);
   if (!response.ok) {
     const body = data as { message?: string; state?: ArenaState };
     throw new ArenaError(body.message || `Engine request failed (${response.status}).`, response.status, body.state);
