@@ -4,7 +4,7 @@ PokerZero is an offline heads-up no-limit Texas Hold'em research project. It doe
 
 ## Implemented
 
-Stage 0 provides a C++20 game engine, uniform seeded shuffle, integer-chip betting, 5–7-card evaluation, explicitly whitelisted observations, and deterministic replay from deck seed and action sequence. Stage 1 adds random, passive, tight-aggressive, loose-aggressive, and equity-based baseline agents. The match runner uses duplicate deals with swapped button positions and reports a paired-block confidence interval. Stages 2–3 add Kuhn and Leduc CFR, CFR+, external-sampling MCCFR, and exact best-response evaluation. Stage 4 has an experimental restricted Hold'em trainer and policy loader. It has not passed Gate D. Resolving and final tournament stages are not implemented.
+Stage 0 provides a C++20 game engine, uniform seeded shuffle, integer-chip betting, 5–7-card evaluation, explicitly whitelisted observations, and deterministic replay from deck seed and action sequence. Stage 1 adds random, passive, tight-aggressive, loose-aggressive, and equity-based baseline agents. The match runner uses duplicate deals with swapped button positions and reports a paired-block confidence interval. Stages 2–3 add Kuhn and Leduc CFR, CFR+, external-sampling MCCFR, and exact best-response evaluation. Stage 4 adds a restricted Hold'em trainer and policy loader. Its frozen 50,000-iteration candidate passed Gate D against the two predeclared weak baselines, random and passive, but lost to three stronger heuristics. See [Stage 4 results](docs/stage4_results.md). Stage 5 resolving remains experimental in the separate `codex/pokerzero-stage5` branch; Gate E and Stage 6 have not passed.
 
 ## Build and test
 
