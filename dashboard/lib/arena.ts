@@ -52,7 +52,7 @@ function assertPublicPayload(value: unknown): void {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
-  try { response = await fetch(`${base}${path}`, { ...init, cache: "no-store", headers: { "Content-Type": "application/json", ...init?.headers } }); }
+  try { response = await fetch(`${base}${path}`, { ...init, cache: "no-store", credentials: "same-origin", headers: { "Content-Type": "application/json", ...init?.headers } }); }
   catch { throw new ArenaError("Local engine is unavailable. Start the trusted Arena adapter to play.", 0); }
   let data: unknown;
   try { data = await response.json(); } catch { throw new ArenaError("The local engine returned an unreadable response.", response.status); }
