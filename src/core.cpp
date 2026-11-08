@@ -283,6 +283,7 @@ void Game::showdown() {
     stacks_[scores[0] > scores[1] ? 0 : 1] += pot_;
   }
   pot_ = 0;
+  showdown_ = true;
   street_ = Street::Terminal;
 }
 
@@ -295,6 +296,13 @@ void Game::award_fold(int winner) {
 std::array<Chips, 2> Game::terminal_payoffs() const {
   if (!terminal()) throw std::logic_error("hand is not terminal");
   return {stacks_[0] - config_.initial_stack, stacks_[1] - config_.initial_stack};
+}
+
+TerminalView Game::terminal_view(int viewer) const {
+  if (!terminal() || (viewer != 0 && viewer != 1))
+    throw std::invalid_argument("terminal view requires a completed hand and valid viewer");
+  return {button_, hole_[viewer], showdown_ ? std::optional(hole_[1 - viewer]) : std::nullopt,
+          board_, history_, stacks_, street_contributions_, pot_, terminal_payoffs(), showdown_};
 }
 
 void Game::check_invariants() const {

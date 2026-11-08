@@ -124,6 +124,21 @@ struct GameConfig {
   Chips big_blind = 100;
 };
 
+// A completed-hand view for a trusted local presentation adapter. It is
+// deliberately constructed from dealt/public state, never from the deck.
+struct TerminalView {
+  int button;
+  std::array<Card, 2> viewer_hole;
+  std::optional<std::array<Card, 2>> opponent_hole;
+  std::vector<Card> board;
+  std::vector<PublicAction> history;
+  std::array<Chips, 2> stacks;
+  std::array<Chips, 2> street_contributions;
+  Chips pot;
+  std::array<Chips, 2> payoffs;
+  bool showdown;
+};
+
 class Game {
  public:
   static Game reset(std::uint64_t seed, GameConfig config = {}, int button = 0);
@@ -133,6 +148,7 @@ class Game {
   void step(Action action);
   [[nodiscard]] bool terminal() const { return street_ == Street::Terminal; }
   [[nodiscard]] std::array<Chips, 2> terminal_payoffs() const;
+  [[nodiscard]] TerminalView terminal_view(int viewer) const;
   [[nodiscard]] int actor() const { return actor_; }
   [[nodiscard]] Street street() const { return street_; }
   [[nodiscard]] std::array<Chips, 2> stacks() const { return stacks_; }
@@ -163,6 +179,7 @@ class Game {
   int button_ = 0;
   int actor_ = 0;
   Street street_ = Street::Preflop;
+  bool showdown_ = false;
 };
 
 [[nodiscard]] Action random_legal_action(const Observation& observation, Pcg32& rng);
