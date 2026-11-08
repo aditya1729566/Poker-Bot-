@@ -27,7 +27,8 @@ async function proxy(request: NextRequest, context: Context) {
   if (request.method === "POST") {
     body = await request.text();
     if (body.length > 4096) return NextResponse.json({ apiVersion: "arena.v1", message: "Arena request is too large." }, { status: 422 });
-    headers.set("content-type", "application/json");
+    const contentType = request.headers.get("content-type");
+    if (contentType) headers.set("content-type", contentType);
   }
   try {
     const upstream = await fetch(target, { method: request.method, headers, body, cache: "no-store", redirect: "manual" });

@@ -41,6 +41,8 @@ run("whole human-versus-passive hand stays public, legal, and replayable through
   const inventory = await request("GET", "/checkpoints");
   assert.equal(inventory.status, 200);
   assert.equal(inventory.data.checkpoints.find(x => x.id === "passive")?.available, true);
+  const wrongType = await fetch(base + "/sessions", { method: "POST", headers: { Origin: new URL(origin).origin, "Content-Type": "text/plain" }, body: JSON.stringify({ checkpointId: "passive" }) });
+  assert.equal(wrongType.status, 422);
   const deniedSeed = await request("POST", "/sessions", { checkpointId: "passive", seed: 1 });
   assert.equal(deniedSeed.status, 422);
   const created = await request("POST", "/sessions", { checkpointId: "passive" });
