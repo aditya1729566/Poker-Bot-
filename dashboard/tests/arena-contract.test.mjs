@@ -1,6 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { arena, ArenaError } from "../lib/arena.ts";
+import { arena, ArenaError, isValidRaiseTarget } from "../lib/arena.ts";
+
+test("exact raise target accepts only engine range and integer chips", () => {
+  const legal = { fold: true, check: false, call: true, toCall: 50, minRaiseTo: 200, maxRaiseTo: 10000 };
+  assert.equal(isValidRaiseTarget(legal, 200), true);
+  assert.equal(isValidRaiseTarget(legal, 10000), true);
+  assert.equal(isValidRaiseTarget(legal, 199), false);
+  assert.equal(isValidRaiseTarget(legal, 10001), false);
+  assert.equal(isValidRaiseTarget(legal, 200.5), false);
+  assert.equal(isValidRaiseTarget(null, 200), false);
+});
 
 test("session and replay requests never carry a deal seed", async () => {
   const calls = [];
@@ -34,5 +44,9 @@ test("restricted fields are rejected in success and error payloads", async () =>
     await assert.rejects(arena.checkpoints(), /restricted field/);
     globalThis.fetch = async () => new Response(JSON.stringify({ apiVersion: "arena.v1", state: { opponentHole: ["Ah","As"], terminal: null } }), { status: 200 });
     await assert.rejects(arena.state("opaque"), /opponent card/);
+    globalThis.fetch = async () => new Response(JSON.stringify({ apiVersion: "arena.v1", state: { opponentHole: ["Ah","As"], terminal: { reason: "fold" } } }), { status: 200 });
+    await assert.rejects(arena.state("opaque"), /folded opponent/);
+    globalThis.fetch = async () => new Response(JSON.stringify({ apiVersion: "arena.v1", revealedHole: ["Ah","As"], terminal: { reason: "fold" } }), { status: 200 });
+    await assert.rejects(arena.replay("opaque"), /replay revealed/);
   } finally { globalThis.fetch = original; }
 });

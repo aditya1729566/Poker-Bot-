@@ -14,6 +14,11 @@ export type Checkpoint = { id: string; label: string; sha256: string | null; sou
 export type DecisionAnalysis = { actor: number; distribution?: { action: Action; probability: number }[]; equity?: { estimate: number; standardError: number; samples: number; method: string }; tableVisits?: number; usedFallback?: boolean; availability: string };
 export type CompletedHand = { replayId: string; publicActions: PublicAction[]; board: Card[]; revealedHole: [Card, Card] | null; terminal: Terminal; analysis: DecisionAnalysis[] };
 
+export function isValidRaiseTarget(legal: Legal | null, target: number): boolean {
+  return legal?.minRaiseTo != null && legal.maxRaiseTo != null &&
+    Number.isSafeInteger(target) && target >= legal.minRaiseTo && target <= legal.maxRaiseTo;
+}
+
 const base = process.env.NEXT_PUBLIC_ARENA_API_URL || "/api/arena/v1";
 
 export class ArenaError extends Error {
@@ -34,6 +39,14 @@ function assertPublicPayload(value: unknown): void {
   }
   if ("opponentHole" in object && !object.terminal && object.opponentHole !== null) {
     throw new ArenaError("The local engine revealed an opponent card before hand completion.", 502);
+  }
+  if ("opponentHole" in object && object.terminal && typeof object.terminal === "object" &&
+      (object.terminal as Record<string, unknown>).reason === "fold" && object.opponentHole !== null) {
+    throw new ArenaError("The local engine revealed a folded opponent hand.", 502);
+  }
+  if ("revealedHole" in object && object.terminal && typeof object.terminal === "object" &&
+      (object.terminal as Record<string, unknown>).reason === "fold" && object.revealedHole !== null) {
+    throw new ArenaError("The replay revealed a folded opponent hand.", 502);
   }
 }
 
