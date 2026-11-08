@@ -22,6 +22,8 @@ test("session and replay requests never carry a deal seed", async () => {
   try {
     await arena.createSession("baseline");
     await arena.replay("opaque-replay");
+    assert.equal(calls[0].url, "/api/arena/v1/sessions");
+    assert.equal(calls[1].url, "/api/arena/v1/replays");
     assert.deepEqual(JSON.parse(calls[0].init.body), { checkpointId: "baseline" });
     assert.deepEqual(JSON.parse(calls[1].init.body), { replayId: "opaque-replay" });
     assert.equal(JSON.stringify(calls).includes("seed"), false);

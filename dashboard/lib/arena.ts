@@ -19,7 +19,7 @@ export function isValidRaiseTarget(legal: Legal | null, target: number): boolean
     Number.isSafeInteger(target) && target >= legal.minRaiseTo && target <= legal.maxRaiseTo;
 }
 
-const base = process.env.NEXT_PUBLIC_ARENA_API_URL || "/api/arena/v1";
+const base = "/api/arena/v1";
 
 export class ArenaError extends Error {
   status: number;
