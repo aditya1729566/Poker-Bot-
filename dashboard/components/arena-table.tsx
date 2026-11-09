@@ -27,6 +27,7 @@ export function ArenaTable() {
   const [completed, setCompleted] = useState<CompletedHand | null>(null);
   const [raiseTo, setRaiseTo] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [restoring, setRestoring] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [adapterAvailable, setAdapterAvailable] = useState(false);
 
@@ -44,18 +45,27 @@ export function ArenaTable() {
   }, [loadCheckpoints]);
 
   useEffect(() => {
+    const id = sessionStorage.getItem("pokerzero.sessionId.v1");
+    if (!id) { setRestoring(false); return; }
+    arena.state(id).then(({ state: resumed }) => { setSessionId(id); setState(resumed); })
+      .catch(() => { sessionStorage.removeItem("pokerzero.sessionId.v1"); })
+      .finally(() => setRestoring(false));
+  }, []);
+
+  useEffect(() => {
     if (state?.legal?.minRaiseTo !== null && state?.legal?.minRaiseTo !== undefined) setRaiseTo(state.legal.minRaiseTo);
     if (state?.terminal && sessionId) arena.completed(sessionId, state.handId).then(hand => { setCompleted(hand); try { sessionStorage.setItem("pokerzero.lastReplayId.v1", hand.replayId); } catch {} }).catch(() => setCompleted(null));
   }, [state, sessionId]);
 
   async function start() {
-    if (!selected || busy) return;
+    if (!selected || busy || restoring) return;
     setBusy(true); setError(null); setCompleted(null);
     try {
       const id = sessionId || (await arena.createSession(selected)).sessionId;
+      sessionStorage.setItem("pokerzero.sessionId.v1", id);
       setSessionId(id); setState((await arena.startHand(id)).state);
     } catch (e) {
-      if (e instanceof ArenaError && (e.status === 404 || e.status === 410)) { setSessionId(null); setState(null); setCompleted(null); }
+      if (e instanceof ArenaError && (e.status === 404 || e.status === 410)) { sessionStorage.removeItem("pokerzero.sessionId.v1"); setSessionId(null); setState(null); setCompleted(null); }
       setError((e as Error).message);
     }
     finally { setBusy(false); }
@@ -67,7 +77,7 @@ export function ArenaTable() {
     try { setState((await arena.act(sessionId, state, action)).state); }
     catch (e) {
       if (e instanceof ArenaError && e.state) setState(e.state);
-      if (e instanceof ArenaError && (e.status === 404 || e.status === 410)) { setSessionId(null); setState(null); setCompleted(null); }
+      if (e instanceof ArenaError && (e.status === 404 || e.status === 410)) { sessionStorage.removeItem("pokerzero.sessionId.v1"); setSessionId(null); setState(null); setCompleted(null); }
       setError((e as Error).message);
     } finally { setBusy(false); }
   }
@@ -89,7 +99,7 @@ export function ArenaTable() {
       <div className="table-footer" aria-live="polite"><span>{state?.terminal ? `Hand complete · ${state.terminal.reason}` : state ? `${state.actor === state.humanSeat ? "Your action" : "Bot acting"} · ${state.street}` : "Deal a hand to begin"}</span><span>BLINDS 0.5 / 1 BB</span></div>
     </section>
     <aside className="control-panel"><div className="panel-heading"><span className="eyebrow">LOCAL SESSION</span><h2>Action desk</h2></div>
-      {!state && <div className="setup"><label htmlFor="checkpoint">Bot policy</label><select id="checkpoint" value={selected} onChange={e => setSelected(e.target.value)} disabled={!adapterAvailable || busy}><option value="">{adapterAvailable ? "No approved policies" : "Engine unavailable"}</option>{checkpoints.map(c => <option key={c.id} value={c.id} disabled={!c.available}>{c.label}{c.available ? "" : " · unavailable"}</option>)}</select><p>Policies are loaded from the adapter’s verified local allowlist.</p><Button onClick={start} disabled={!selected || busy}>{busy ? "Dealing…" : "Deal hand"}</Button>{!adapterAvailable && <Button variant="secondary" onClick={() => void loadCheckpoints()}>Reconnect engine</Button>}</div>}
+      {!state && <div className="setup"><label htmlFor="checkpoint">Bot policy</label><select id="checkpoint" value={selected} onChange={e => setSelected(e.target.value)} disabled={!adapterAvailable || busy || restoring}><option value="">{adapterAvailable ? "No approved policies" : "Engine unavailable"}</option>{checkpoints.map(c => <option key={c.id} value={c.id} disabled={!c.available}>{c.label}{c.available ? "" : " · unavailable"}</option>)}</select><p>Policies are loaded from the adapter’s verified local allowlist.</p><Button onClick={start} disabled={!selected || busy || restoring}>{restoring ? "Restoring hand…" : busy ? "Dealing…" : "Deal hand"}</Button>{!adapterAvailable && <Button variant="secondary" onClick={() => void loadCheckpoints()}>Reconnect engine</Button>}</div>}
       {state && !state.terminal && <div className="actions"><div className="decision-data"><span>TO CALL <strong>{chips(legal?.toCall,bb)}</strong></span><span>STREET COMMITTED <strong>{chips(state.streetContributions[state.humanSeat],bb)}</strong></span></div><div className="action-grid"><Button variant="danger" disabled={!legal?.fold || busy} onClick={() => act({kind:"fold"})}>Fold</Button><Button variant="secondary" disabled={!legal?.check || busy} onClick={() => act({kind:"check"})}>Check</Button><Button disabled={!legal?.call || busy} onClick={() => act({kind:"call"})}>Call {legal?.call ? chips(legal.toCall,bb) : ""}</Button></div><div className="raise-box"><label htmlFor="raise">Raise to <strong>{chips(raiseTo,bb)}</strong></label><input id="raise" type="range" min={legal?.minRaiseTo || 0} max={legal?.maxRaiseTo || 0} step="1" value={Math.min(legal?.maxRaiseTo || 0,Math.max(legal?.minRaiseTo || 0,raiseTo))} disabled={!canRaise || busy} onChange={e => setRaiseTo(Number(e.target.value))}/><div className="range-label"><span>{chips(legal?.minRaiseTo || undefined,bb)}</span><span>{chips(legal?.maxRaiseTo || undefined,bb)}</span></div><label className="raise-number-label" htmlFor="raise-chips">Exact target in chips</label><input id="raise-chips" className="raise-number" type="number" inputMode="numeric" min={legal?.minRaiseTo || 0} max={legal?.maxRaiseTo || 0} step="1" value={raiseTo} disabled={!canRaise || busy} onChange={e => setRaiseTo(Number(e.target.value))} aria-invalid={canRaise && !validRaise}/><div className="action-grid"><Button variant="secondary" disabled={!validRaise || busy} onClick={() => act({kind:"raiseTo",target:raiseTo})}>Raise to {chips(raiseTo,bb)}</Button><Button variant="secondary" disabled={!canRaise || busy} onClick={() => act({kind:"raiseTo",target:legal!.maxRaiseTo!})}>All in</Button></div></div></div>}
       {state?.terminal && <div className="terminal-panel"><span className="eyebrow">HAND COMPLETE</span><strong>{state.terminal.payoffs[state.humanSeat] >= 0 ? "+" : ""}{chips(state.terminal.payoffs[state.humanSeat],bb)}</strong><p>{completed ? `Replay ready · ${completed.publicActions.length} public actions` : "Completed-hand detail unavailable"}</p><Button onClick={start} disabled={busy}><RotateCcw size={16}/> Next hand</Button>{completed && <Button asChild variant="secondary"><Link href="/study">Inspect this hand</Link></Button>}</div>}
       {error && <p className="error-banner" role="alert"><AlertCircle size={17}/>{error}</p>}

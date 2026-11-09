@@ -52,6 +52,9 @@ run("whole human-versus-passive hand stays public, legal, and replayable through
   assert.equal(first.status, 200);
   let state = first.data.state;
   const handId = state.handId;
+  const resumed = await request("GET", `/sessions/${id}`);
+  assert.equal(resumed.status, 200);
+  assert.deepEqual(resumed.data.state, state);
   if (!state.legal.check) {
     const illegal = await request("POST", `/sessions/${id}/actions`, { handId, expectedActionIndex: state.actionIndex, action: { kind: "check" } });
     assert.equal(illegal.status, 422);
