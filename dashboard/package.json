@@ -9,7 +9,8 @@
     "start": "next start -H 127.0.0.1",
     "typecheck": "tsc --noEmit",
     "test": "node --test tests/*.test.mjs",
-    "test:integration": "node --test tests/arena-integration.test.mjs tests/research-integration.test.mjs"
+    "test:integration": "node --test tests/arena-integration.test.mjs tests/research-integration.test.mjs",
+    "test:browser": "node tests/browser-qa.mjs"
   },
   "dependencies": {
     "@radix-ui/react-slot": "1.2.4",
@@ -26,6 +27,7 @@
     "@types/node": "24.0.0",
     "@types/react": "19.2.0",
     "@types/react-dom": "19.2.0",
+    "playwright": "^1.65.0",
     "tailwindcss": "4.3.4",
     "typescript": "5.9.3"
   }

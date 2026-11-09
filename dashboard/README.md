@@ -37,6 +37,20 @@ documented `python/arena_http.py` command, then run:
 ARENA_INTEGRATION_URL=http://127.0.0.1:3000 npm run test:integration
 ```
 
-That test drives a complete hand and replay through Next's proxy. The C++
-adapter integration and browser QA remain required before this can be called
-a playable, verified human-versus-bot application.
+That test drives a complete hand and replay through Next's proxy. See
+[QA_RESULT.md](QA_RESULT.md) for the verified combined-branch run; rerun the
+native, integration, and browser checks after changes to either side.
+
+For browser acceptance, `playwright` 1.65.0 (Apache-2.0) is pinned as a
+development dependency. Install its Chromium browser with
+`npx playwright install chromium`, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to a
+trusted local Chromium binary. With the adapter and Next server running at the
+same configured loopback origins:
+
+```sh
+ARENA_BROWSER_URL=http://127.0.0.1:3000 npm run test:browser
+```
+
+This runs a real browser hand, replay, fold secrecy, keyboard hand-grid
+navigation, and overflow checks at 375, 768, 1024, and 1440 pixels. Optional
+`QA_SCREENSHOT_DIR` writes screenshots to an operator-chosen local directory.
