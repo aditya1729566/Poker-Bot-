@@ -36,6 +36,18 @@ and each session allows at most 256 completed hands. Policy diagnostics appear
 only when the loaded policy actually reports them; probability and equity
 diagnostics are currently unavailable.
 
+Build and verify the native and HTTP paths with:
+
+```bash
+cmake -S . -B build-arena -DCMAKE_BUILD_TYPE=Release
+cmake --build build-arena -j4
+ctest --test-dir build-arena --output-on-failure
+```
+
+The `arena_e2e` test launches a temporary loopback adapter against the built
+shared library, plays a complete showdown and a fold, and checks replay and
+privacy at the HTTP boundary.
+
 The HTTP surface follows `arena.v1` in `API_V1.md` in the frontend worktree.
 This adapter does not make claims about bot strength or use human play data for
 official evaluation.
